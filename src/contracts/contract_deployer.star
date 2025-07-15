@@ -19,17 +19,19 @@ CANNED_VALUES = {
 }
 
 
-def _normalize_artifacts_locator(locator):
+def _normalize_artifacts_locator(plan, locator):
     """Transform artifact locator from 'artifact://NAME' format to (name, file_path) pair.
 
     If the locator doesn't use the artifact:// format, returns (None, original_locator).
 
     Args:
+        plan: The plan object
         locator: The original artifact locator string
 
     Returns:
         tuple: (artifact_name, normalized_locator, mount_point)
     """
+    plan.print("[OP-DEPLOY] _normalize_artifacts_locator called with: {0}".format(locator))
     if locator and locator.startswith("artifact://"):
         artifact_name = locator[len("artifact://") :]
         mount_point = "/{0}".format(artifact_name)
@@ -48,16 +50,17 @@ def _normalize_artifacts_locators(plan, l1_locator, l2_locator):
     Returns:
         tuple: (l1_artifacts_locator, l2_artifacts_locator, extra_files)
     """
+    plan.print("[OP-DEPLOY] _normalize_artifacts_locators called with: l1_locator={0}, l2_locator={1}".format(l1_locator, l2_locator))
     (
         l1_artifact_name,
         l1_artifacts_locator,
         l1_mount_point,
-    ) = _normalize_artifacts_locator(l1_locator)
+    ) = _normalize_artifacts_locator(plan, l1_locator)
     (
         l2_artifact_name,
         l2_artifacts_locator,
         l2_mount_point,
-    ) = _normalize_artifacts_locator(l2_locator)
+    ) = _normalize_artifacts_locator(plan, l2_locator)
 
     extra_files = {}
     if l1_mount_point:
@@ -73,11 +76,16 @@ def _normalize_artifacts_locators(plan, l1_locator, l2_locator):
 def deploy_contracts(
     plan, priv_key, l1_config_env_vars, optimism_args, l1_network, altda_args
 ):
+    plan.print("[OP-DEPLOY] Starting contract deployment process")
+    plan.print("[OP-DEPLOY] Arguments: l1_network={0}, altda_args={1}".format(l1_network, altda_args))
+    plan.print("[OP-DEPLOY] L1 config env vars: {0}".format(l1_config_env_vars))
     l2_chain_ids_list = [
         str(chain.network_params.network_id) for chain in optimism_args.chains
     ]
     l2_chain_ids = ",".join(l2_chain_ids_list)
+    plan.print("[OP-DEPLOY] L2 chain IDs: {0}".format(l2_chain_ids))
 
+    plan.print("[OP-DEPLOY] Initializing OP deployer")
     op_deployer_init = plan.run_sh(
         name="op-deployer-init",
         description="Initialize L2 contract deployments",
@@ -98,8 +106,10 @@ def deploy_contracts(
             ]
         ),
     )
+    plan.print("[OP-DEPLOY] OP deployer initialization completed")
 
     # Normalize artifact locators with specific mount points
+    plan.print("[OP-DEPLOY] Normalizing artifact locators")
     (
         l1_artifacts_locator,
         l2_artifacts_locator,
@@ -109,12 +119,16 @@ def deploy_contracts(
         optimism_args.op_contract_deployer_params.l1_artifacts_locator,
         optimism_args.op_contract_deployer_params.l2_artifacts_locator,
     )
+    plan.print("[OP-DEPLOY] L1 artifacts locator: {0}".format(l1_artifacts_locator))
+    plan.print("[OP-DEPLOY] L2 artifacts locator: {0}".format(l2_artifacts_locator))
 
+    plan.print("[OP-DEPLOY] Uploading fund script")
     fund_script_artifact = plan.upload_files(
         src=FUND_SCRIPT_FILEPATH,
         name="op-deployer-fund-script",
     )
 
+    plan.print("[OP-DEPLOY] Funding deployer addresses")
     plan.run_sh(
         name="op-deployer-fund",
         description="Collect keys, and fund addresses",
@@ -140,10 +154,13 @@ def deploy_contracts(
         },
         run='bash /fund-script/fund.sh "{0}"'.format(l2_chain_ids),
     )
+    plan.print("[OP-DEPLOY] Deployer funding completed")
 
+    plan.print("[OP-DEPLOY] Building hardfork schedule")
     hardfork_schedule = []
     for index, chain in enumerate(optimism_args.chains):
         np = chain.network_params
+        plan.print("[OP-DEPLOY] Processing hardfork schedule for chain {0}".format(index))
 
         # rename each hardfork to the name the override expects
         renames = (
@@ -158,8 +175,10 @@ def deploy_contracts(
         # toml does not support null values
         for fork_key, activation_timestamp in renames:
             if activation_timestamp != None:
+                plan.print("[OP-DEPLOY] Adding hardfork {0} at timestamp {1} for chain {2}".format(fork_key, activation_timestamp, index))
                 hardfork_schedule.append((index, fork_key, activation_timestamp))
 
+    plan.print("[OP-DEPLOY] Building deployment intent configuration")
     intent = {
         "useInterop": optimism_args.interop.enabled,
         "l1ContractsLocator": l1_artifacts_locator,
@@ -175,6 +194,7 @@ def deploy_contracts(
         },
         "chains": [],
     }
+    plan.print("[OP-DEPLOY] Interop enabled: {0}".format(optimism_args.interop.enabled))
 
     absolute_prestate = ""
     if optimism_args.op_contract_deployer_params.global_deploy_overrides[
@@ -185,6 +205,7 @@ def deploy_contracts(
                 "faultGameAbsolutePrestate"
             ]
         )
+        plan.print("[OP-DEPLOY] Using custom fault game absolute prestate: {0}".format(absolute_prestate))
         intent["globalDeployOverrides"] = {
             "dangerouslyAllowCustomDisputeParameters": True,
             "faultGameAbsolutePrestate": absolute_prestate,
@@ -192,6 +213,8 @@ def deploy_contracts(
 
     for i, chain in enumerate(optimism_args.chains):
         chain_id = str(chain.network_params.network_id)
+        plan.print("[OP-DEPLOY] Configuring chain {0} (ID: {1})".format(i, chain_id))
+        plan.print("[OP-DEPLOY] Chain {0} block time: {1}s, fund_dev_accounts: {2}".format(chain_id, chain.network_params.seconds_per_slot, chain.network_params.fund_dev_accounts))
         intent_chain = dict(CANNED_VALUES)
         intent_chain.update(
             {
@@ -246,9 +269,11 @@ def deploy_contracts(
             intent_chain["deployOverrides"][fork_key] = "0x%x" % activation_timestamp
         intent["chains"].append(intent_chain)
 
+    plan.print("[OP-DEPLOY] Encoding intent configuration to JSON")
     intent_json = json.encode(intent)
     intent_json_artifact = utils.write_to_file(plan, intent_json, "/tmp", "intent.json")
 
+    plan.print("[OP-DEPLOY] Configuring OP deployer with intent file")
     op_deployer_configure = plan.run_sh(
         name="op-deployer-configure",
         description="Configure L2 contract deployments",
@@ -279,12 +304,15 @@ def deploy_contracts(
             ]
         ),
     )
+    plan.print("[OP-DEPLOY] OP deployer configuration completed")
 
+    plan.print("[OP-DEPLOY] Preparing apply commands")
     apply_cmds = [
         "op-deployer apply --l1-rpc-url $L1_RPC_URL --private-key $PRIVATE_KEY --workdir /network-data",
     ]
     for chain in optimism_args.chains:
         network_id = chain.network_params.network_id
+        plan.print("[OP-DEPLOY] Adding inspection commands for chain {0}".format(network_id))
         apply_cmds.extend(
             [
                 "op-deployer inspect genesis --workdir /network-data --outfile /network-data/genesis-{0}.json {0}".format(
@@ -296,6 +324,7 @@ def deploy_contracts(
             ]
         )
 
+    plan.print("[OP-DEPLOY] Applying contract deployments")
     op_deployer_output = plan.run_sh(
         name="op-deployer-apply",
         description="Apply L2 contract deployments",
@@ -317,13 +346,17 @@ def deploy_contracts(
         | contracts_extra_files,
         run=" && ".join(apply_cmds),
     )
+    plan.print("[OP-DEPLOY] Contract deployment application completed")
 
+    plan.print("[OP-DEPLOY] Generating chainspecs for all chains")
     for chain in optimism_args.chains:
+        chain_id = str(chain.network_params.network_id)
+        plan.print("[OP-DEPLOY] Generating chainspec for chain {0}".format(chain_id))
         plan.run_sh(
             name="op-deployer-generate-chainspec",
             description="Generate chainspec",
             image=utils.DEPLOYMENT_UTILS_IMAGE,
-            env_vars={"CHAIN_ID": str(chain.network_params.network_id)},
+            env_vars={"CHAIN_ID": chain_id},
             store=[
                 StoreSpec(
                     src="/network-data",
@@ -337,12 +370,15 @@ def deploy_contracts(
             run='jq --from-file /fund-script/gen2spec.jq < "/network-data/genesis-$CHAIN_ID.json" > "/network-data/chainspec-$CHAIN_ID.json"',
         )
 
+    plan.print("[OP-DEPLOY] Contract deployment process completed successfully")
     return op_deployer_output.files_artifacts[0]
 
 
 def chain_key(index, key):
+    # Note: chain_key is a utility function that doesn't have access to plan
     return "chains.[{0}].{1}".format(index, key)
 
 
 def read_chain_cmd(filename, l2_chain_id):
+    # Note: read_chain_cmd is a utility function that doesn't have access to plan
     return "`jq -r .address /network-data/{0}-{1}.json`".format(filename, l2_chain_id)

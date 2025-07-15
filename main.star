@@ -23,7 +23,9 @@ def run(plan, args={}):
     Returns:
         A full deployment of Optimism L2(s)
     """
-    plan.print("Parsing the L1 input args")
+    plan.print("[OP-DEPLOY] Starting Optimism deployment process")
+    plan.print("[OP-DEPLOY] run() called with args keys: {0}".format(list(args.keys()) if args else "empty"))
+    plan.print("[OP-DEPLOY] Parsing the L1 input args")
     # If no args are provided, use the default values with minimal preset
     ethereum_args = args.get("ethereum_package", {})
     external_l1_args = args.get("external_l1_network_params", {})
@@ -80,11 +82,14 @@ def run(plan, args={}):
             12
         ].private_key  # reserved for L2 contract deployers
         l1_config_env_vars = get_l1_config(
-            all_l1_participants, l1_network_params, l1_network_id
+            plan, all_l1_participants, l1_network_params, l1_network_id
         )
         plan.print("Waiting for L1 to start up")
         wait_for_sync.wait_for_startup(plan, l1_config_env_vars)
 
+    plan.print("[OP-DEPLOY] Starting contract deployment")
+    plan.print("[OP-DEPLOY] Calling deploy_contracts with: l1_network={0}, altda_deploy_config={1}".format(l1_network, altda_deploy_config))
+    plan.print("[OP-DEPLOY] Number of chains to deploy: {0}".format(len(optimism_args.chains)))
     deployment_output = contract_deployer.deploy_contracts(
         plan,
         l1_priv_key,
@@ -93,6 +98,7 @@ def run(plan, args={}):
         l1_network,
         altda_deploy_config,
     )
+    plan.print("[OP-DEPLOY] Contract deployment completed")
 
     jwt_file = plan.upload_files(
         src=ethereum_package_static_files.JWT_PATH_FILEPATH,
@@ -100,7 +106,11 @@ def run(plan, args={}):
     )
 
     l2s = []
+    plan.print("[OP-DEPLOY] Starting L2 chain deployments")
+    plan.print("[OP-DEPLOY] Number of L2 chains to deploy: {0}".format(len(optimism_args.chains)))
     for l2_num, chain in enumerate(optimism_args.chains):
+        plan.print("[OP-DEPLOY] Launching L2 chain {0}/{1} - {2}".format(l2_num + 1, len(optimism_args.chains), chain.network_params.name))
+        plan.print("[OP-DEPLOY] l2_launcher.launch_l2 called with: l2_num={0}, chain_name={1}, global_log_level={2}".format(l2_num, chain.network_params.name, global_log_level))
         l2s.append(
             l2_launcher.launch_l2(
                 plan,
@@ -120,9 +130,12 @@ def run(plan, args={}):
                 interop_params,
             )
         )
+        plan.print("[OP-DEPLOY] L2 chain {0} deployment completed".format(chain.network_params.name))
 
     supervisor = None
     if interop_params.enabled:
+        plan.print("[OP-DEPLOY] Launching OP Supervisor for interop")
+        plan.print("[OP-DEPLOY] op_supervisor_launcher.launch called with: chains_count={0}, l2s_count={1}".format(len(optimism_args.chains), len(l2s)))
         supervisor = op_supervisor_launcher.launch(
             plan,
             l1_config_env_vars,
@@ -132,8 +145,14 @@ def run(plan, args={}):
             interop_params.supervisor_params,
             observability_helper,
         )
+        plan.print("[OP-DEPLOY] OP Supervisor launched successfully")
+    else:
+        plan.print("[OP-DEPLOY] Interop disabled, skipping OP Supervisor")
 
-    for challenger_params in optimism_args.challengers:
+    plan.print("[OP-DEPLOY] Launching {0} challenger(s)".format(len(optimism_args.challengers)))
+    for i, challenger_params in enumerate(optimism_args.challengers):
+        plan.print("[OP-DEPLOY] Launching challenger {0}/{1}".format(i + 1, len(optimism_args.challengers)))
+        plan.print("[OP-DEPLOY] op_challenger_launcher.launch called with: challenger_params={0}".format(challenger_params))
         op_challenger_launcher.launch(
             plan=plan,
             params=challenger_params,
@@ -143,8 +162,11 @@ def run(plan, args={}):
             deployment_output=deployment_output,
             observability_helper=observability_helper,
         )
+        plan.print("[OP-DEPLOY] Challenger {0} launched successfully".format(i + 1))
 
     if optimism_args.faucet.enabled:
+        plan.print("[OP-DEPLOY] Installing faucet")
+        plan.print("[OP-DEPLOY] _install_faucet called with: faucet_enabled={0}, l2s_count={1}".format(optimism_args.faucet.enabled, len(l2s)))
         _install_faucet(
             plan=plan,
             faucet_params=optimism_args.faucet,
@@ -153,13 +175,21 @@ def run(plan, args={}):
             deployment_output=deployment_output,
             l2s=l2s,
         )
+        plan.print("[OP-DEPLOY] Faucet installation completed")
+    else:
+        plan.print("[OP-DEPLOY] Faucet disabled, skipping installation")
 
+    plan.print("[OP-DEPLOY] Launching observability stack")
+    plan.print("[OP-DEPLOY] observability.launch called with: observability_params={0}".format(observability_params))
     observability.launch(
         plan, observability_helper, global_node_selectors, observability_params
     )
+    plan.print("[OP-DEPLOY] Optimism deployment process completed successfully")
 
 
-def get_l1_config(all_l1_participants, l1_network_params, l1_network_id):
+def get_l1_config(plan, all_l1_participants, l1_network_params, l1_network_id):
+    plan.print("[OP-DEPLOY] Building L1 configuration")
+    plan.print("[OP-DEPLOY] get_l1_config called with: l1_network_id={0}, participants_count={1}".format(l1_network_id, len(all_l1_participants)))
     env_vars = {}
     env_vars["L1_RPC_KIND"] = "standard"
     env_vars["WEB3_RPC_URL"] = str(all_l1_participants[0].el_context.rpc_http_url)
@@ -179,6 +209,8 @@ def _install_faucet(
     deployment_output,
     l2s,
 ):
+    plan.print("[OP-DEPLOY] Setting up faucet configuration")
+    plan.print("[OP-DEPLOY] _install_faucet called with: l2s_count={0}, faucet_params={1}".format(len(l2s), faucet_params))
     faucets = [
         faucet.faucet_data(
             name="l1",
