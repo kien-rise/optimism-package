@@ -264,6 +264,9 @@ def get_beacon_config(
 
     cmd += participant.cl_extra_params
 
+    # Print the complete op-node command
+    plan.print("[OP-DEPLOY] op-node command: {0}".format(" ".join(cmd)))
+
     config_args = {
         "image": participant.cl_image,
         "ports": ports,

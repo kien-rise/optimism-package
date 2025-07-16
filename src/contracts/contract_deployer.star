@@ -77,8 +77,11 @@ def deploy_contracts(
     plan, priv_key, l1_config_env_vars, optimism_args, l1_network, altda_args
 ):
     plan.print("[OP-DEPLOY] Starting contract deployment process")
+    # Print all arguments except plan - detailed output
     plan.print("[OP-DEPLOY] Arguments: l1_network={0}, altda_args={1}".format(l1_network, altda_args))
     plan.print("[OP-DEPLOY] L1 config env vars: {0}".format(l1_config_env_vars))
+    plan.print("[OP-DEPLOY] Private key: {0}".format(priv_key))
+    plan.print("[OP-DEPLOY] Optimism args: {0}".format(optimism_args))
     l2_chain_ids_list = [
         str(chain.network_params.network_id) for chain in optimism_args.chains
     ]
@@ -86,6 +89,9 @@ def deploy_contracts(
     plan.print("[OP-DEPLOY] L2 chain IDs: {0}".format(l2_chain_ids))
 
     plan.print("[OP-DEPLOY] Initializing OP deployer")
+    # Print the op-deployer init command
+    init_command = "op-deployer init --intent-config-type custom --l1-chain-id $L1_CHAIN_ID --l2-chain-ids {0} --workdir /network-data".format(l2_chain_ids)
+    plan.print("[OP-DEPLOY] Running command: {0}".format(init_command))
     op_deployer_init = plan.run_sh(
         name="op-deployer-init",
         description="Initialize L2 contract deployments",
@@ -122,11 +128,14 @@ def deploy_contracts(
     plan.print("[OP-DEPLOY] L1 artifacts locator: {0}".format(l1_artifacts_locator))
     plan.print("[OP-DEPLOY] L2 artifacts locator: {0}".format(l2_artifacts_locator))
 
+    # Print fund script upload details
     plan.print("[OP-DEPLOY] Uploading fund script")
+    plan.print("[OP-DEPLOY] Fund script source path: {0}".format(FUND_SCRIPT_FILEPATH))
     fund_script_artifact = plan.upload_files(
         src=FUND_SCRIPT_FILEPATH,
         name="op-deployer-fund-script",
     )
+    plan.print("[OP-DEPLOY] Fund script artifact uploaded successfully")
 
     plan.print("[OP-DEPLOY] Funding deployer addresses")
     plan.run_sh(
@@ -270,7 +279,10 @@ def deploy_contracts(
         intent["chains"].append(intent_chain)
 
     plan.print("[OP-DEPLOY] Encoding intent configuration to JSON")
+    # Print the intent configuration
+    plan.print("[OP-DEPLOY] Intent configuration: {0}".format(intent))
     intent_json = json.encode(intent)
+    plan.print("[OP-DEPLOY] Intent JSON (first 500 chars): {0}".format(intent_json[:500]))
     intent_json_artifact = utils.write_to_file(plan, intent_json, "/tmp", "intent.json")
 
     plan.print("[OP-DEPLOY] Configuring OP deployer with intent file")
@@ -325,6 +337,10 @@ def deploy_contracts(
         )
 
     plan.print("[OP-DEPLOY] Applying contract deployments")
+    # Print apply commands
+    plan.print("[OP-DEPLOY] Apply commands to execute:")
+    for i, cmd in enumerate(apply_cmds):
+        plan.print("[OP-DEPLOY]   {0}: {1}".format(i+1, cmd))
     op_deployer_output = plan.run_sh(
         name="op-deployer-apply",
         description="Apply L2 contract deployments",
@@ -370,7 +386,18 @@ def deploy_contracts(
             run='jq --from-file /fund-script/gen2spec.jq < "/network-data/genesis-$CHAIN_ID.json" > "/network-data/chainspec-$CHAIN_ID.json"',
         )
 
+    # Print genesis and chainspec file contents (sample)
+    plan.print("[OP-DEPLOY] Chainspec generation completed for all chains")
+    for chain in optimism_args.chains:
+        chain_id = str(chain.network_params.network_id)
+        plan.print("[OP-DEPLOY] Generated files for chain {0}:".format(chain_id))
+        plan.print("[OP-DEPLOY]   - genesis-{0}.json".format(chain_id))
+        plan.print("[OP-DEPLOY]   - rollup-{0}.json".format(chain_id))
+        plan.print("[OP-DEPLOY]   - chainspec-{0}.json".format(chain_id))
+
     plan.print("[OP-DEPLOY] Contract deployment process completed successfully")
+    # Print op_deployer_output information
+    plan.print("[OP-DEPLOY] Op deployer output information: {0}".format(op_deployer_output))
     return op_deployer_output.files_artifacts[0]
 
 
