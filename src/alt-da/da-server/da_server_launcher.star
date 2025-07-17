@@ -1,8 +1,8 @@
 shared_utils = import_module(
-    "github.com/ethpandaops/ethereum-package/src/shared_utils/shared_utils.star"
+    "github.com/kien-rise/ethereum-package/src/shared_utils/shared_utils.star"
 )
 constants = import_module(
-    "github.com/ethpandaops/ethereum-package/src/package_io/constants.star"
+    "github.com/kien-rise/ethereum-package/src/package_io/constants.star"
 )
 
 # Port IDs

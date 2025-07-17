@@ -9,7 +9,7 @@ FUND_SCRIPT_FILEPATH = "../../static_files/scripts"
 utils = import_module("../util.star")
 
 ethereum_package_genesis_constants = import_module(
-    "github.com/ethpandaops/ethereum-package/src/prelaunch_data_generator/genesis_constants/genesis_constants.star"
+    "github.com/kien-rise/ethereum-package/src/prelaunch_data_generator/genesis_constants/genesis_constants.star"
 )
 
 CANNED_VALUES = {

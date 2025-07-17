@@ -29,7 +29,7 @@ ethereum_package:
 
 ```
 
-Please note, by default your network will be running a `minimal` preset Ethereum network. Click [here](https://github.com/ethereum/consensus-specs/blob/dev/configs/minimal.yaml) to learn more about minimal preset. You can [customize](https://github.com/ethpandaops/ethereum-package) the L1 Ethereum network by modifying the `ethereum_package` configuration.
+Please note, by default your network will be running a `minimal` preset Ethereum network. Click [here](https://github.com/ethereum/consensus-specs/blob/dev/configs/minimal.yaml) to learn more about minimal preset. You can [customize](https://github.com/kien-rise/ethereum-package) the L1 Ethereum network by modifying the `ethereum_package` configuration.
 
 You can also completely remove `ethereum_package` from your configuration in which case it will default to a `minimal` preset Ethereum network.
 
@@ -306,7 +306,7 @@ optimism_package:
         # Builder secret key used by op-rbuilder to sign transactions
         # Defaults to None - not used
         el_builder_key: ""
-        
+
         # The type of builder CL client that should be started
         # Valid values are:
         # op-node
@@ -469,9 +469,9 @@ optimism_package:
       image: ""
 
       # List of L2 chains that this challenger is connected to
-      # 
+      #
       # This field accepts several configuration types:
-      # 
+      #
       # A list of network IDs, in which case the challenger will connect to all the nodes in these network
       participants: ["2151908"]
 
